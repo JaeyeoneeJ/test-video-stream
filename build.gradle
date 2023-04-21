@@ -16,34 +16,30 @@ configurations {
 
 repositories {
 	mavenCentral()
+	jcenter()
 }
 
 dependencies {
-//	// Spring WebMVC
-//	implementation 'org.springframework:spring-webmvc:5.3.10'
-//	// Mime-types
-//	implementation 'eu.medsea.mimeutil:mime-util:2.1.3'
-//	// Jaffree (FFmpeg 바인딩)
-//	// implementation 'com.github.kokorin.jaffree:jaffree-core:2.1.0'
-//	// implementation 'com.github.kokorin.jaffree:jaffree-ffmpeg:2.1.0'
-//	implementation 'net.bramp.ffmpeg:ffmpeg:0.7.0'
-
 	// 기존 spring initializr로 추가한 의존성
 	implementation 'org.springframework.boot:spring-boot-starter-data-jdbc'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
-    testImplementation 'junit:junit:4.13.1'
-    compileOnly 'org.projectlombok:lombok'
+	testImplementation 'junit:junit:4.13.1'
+	compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 
-//	// Logback 라이브러리 추가
-//	implementation 'org.slf4j:slf4j-api:1.7.32'
-//	runtimeOnly 'ch.qos.logback:logback-classic:1.2.6'
+	// aws s3 추가
+	implementation 'com.amazonaws:aws-java-sdk-s3:1.11.238'
 
+	// ffmpeg 추가
+	implementation 'net.bramp.ffmpeg:ffmpeg:0.7.0'
+
+	// inputStream을 String으로 변환하기 위함
+	implementation 'commons-io:commons-io:2.11.0'
 }
 
 jar {
