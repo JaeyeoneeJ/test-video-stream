@@ -104,6 +104,7 @@ public class VideoController {
                         ))
                 .addOutput(outputFilePath)
                 .setFormat("hls")
+                .addExtraArgs("-threads", "1")  // 코어 수를 1개로 제한
                 .addExtraArgs("-hls_time", "10")
                 .addExtraArgs("-hls_list_size", "0")
                 .addExtraArgs("-hls_segment_filename", outputDir + "/" + title + "_" + language + "_%d.ts")
@@ -274,6 +275,7 @@ public class VideoController {
                 .setInput(inputFile.getAbsolutePath())
                 .addOutput(outputFilePath)
                 .setFormat("hls")
+                .addExtraArgs("-threads", "1")  // 코어 수를 1개로 제한
                 .addExtraArgs("-hls_time", "10")
                 .addExtraArgs("-hls_list_size", "0")
                 .addExtraArgs("-hls_segment_filename", outputDir + "/" + title + "_%d.ts")
