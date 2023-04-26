@@ -13,11 +13,11 @@ public class VideosRequest {
     @NotBlank
     String video;
     @NotBlank
-    String voiceKr;
+    String voiceKo;
     @NotBlank
     String voiceEn;
     @NotBlank
     String voiceThai;
     @NotBlank
-    String bg;
+    String bgm;
 }

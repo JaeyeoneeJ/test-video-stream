@@ -8,10 +8,10 @@ import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import com.example.testvideostream.exception.NotFoundException;
 import com.example.testvideostream.model.Videos;
-import com.example.testvideostream.service.VideosService;
+import com.example.testvideostream.service.VideoService;
 
+import com.example.testvideostream.utils.MediaUtils;
 import net.bramp.ffmpeg.FFmpeg;
 import net.bramp.ffmpeg.FFmpegExecutor;
 import net.bramp.ffmpeg.FFprobe;
@@ -31,16 +31,23 @@ import java.io.*;
 import java.util.Optional;
 import java.util.UUID;
 
+import static com.example.testvideostream.utils.FileUtils.checkFilePath;
+
+
 @RestController
 @RequestMapping("/api/video")
 public class VideoController {
     @Autowired
-    private VideosService service;
+    private VideoService videoService;
 
     @Autowired
     private Environment environment;
 
+
     private AmazonS3 s3;
+
+
+    MediaUtils mediaUtils = new MediaUtils();
 
     @PostConstruct
     public void init() {
@@ -61,11 +68,12 @@ public class VideoController {
             @PathVariable @NotBlank String language
     ) throws Exception {
         // 해당 타이틀의 정보를 database에서 가져오기
-        Optional<Videos> videoInfo = service.getVideo(title);
+        Optional<Videos> videoInfo = videoService.getVideo(title);
 
         // background music 다운로드 및 경로 저장
-        String bgLocalPath = getMediaDownloadPathOnLocal(title, "bg");
-        String languageLocalPath = getMediaDownloadPathOnLocal(title, language);
+        mediaUtils.init(videoService, environment);
+        String bgmLocalPath = mediaUtils.getMediaDownloadPathOnLocal(title, "bgm");
+        String languageLocalPath = mediaUtils.getMediaDownloadPathOnLocal(title, language);
 
         // ffmpeg, ffprobe 선언
         String localSrc = environment.getProperty("app.local.src");
@@ -73,14 +81,14 @@ public class VideoController {
         FFprobe ffprobe = new FFprobe(localSrc + "ffprobe");
 
         // 두 audio 파일의 재생 길이 확인
-        FFmpegProbeResult probeResultBg = ffprobe.probe(bgLocalPath);
+        FFmpegProbeResult probeResultBgm = ffprobe.probe(bgmLocalPath);
         FFmpegProbeResult probeResultLanguage = ffprobe.probe(languageLocalPath);
 
-        double durationBg = probeResultBg.getFormat().duration;
+        double durationBgm = probeResultBgm.getFormat().duration;
         double durationLanguage = probeResultLanguage.getFormat().duration;
 
         // 두 audio 파일 중 재생 길이가 더 긴 것을 변수로 저장
-        long maxDuration = Math.round(Math.max(durationBg, durationLanguage));
+        long maxDuration = Math.round(Math.max(durationBgm, durationLanguage));
 
         // 새 audio 파일이 저장될 위치
         String outputDir = "./src/main/resources/temp/" + "audio_" + UUID.randomUUID().toString();
@@ -88,13 +96,10 @@ public class VideoController {
         String outputFilePath = String.format("%s/%s", outputDir, outputFileName);
 
         // 파일 경로가 없을 경우 해당 파일 경로 생성
-        File mediaDir = new File(outputDir);
-        if (!mediaDir.exists()) {
-            mediaDir.mkdirs();
-        }
+        File mediaDir = checkFilePath(outputDir);
 
         FFmpegBuilder builder = new FFmpegBuilder()
-                .addInput(bgLocalPath)
+                .addInput(bgmLocalPath)
                 .addInput(languageLocalPath)
                 .setComplexFilter(String.format(
                                 "[0:a]atrim=0:%d,asetpts=PTS-STARTPTS[a0];" +
@@ -138,10 +143,10 @@ public class VideoController {
         // mediaDir 경로의 모든 파일 삭제
         FileUtils.deleteDirectory(mediaDir);
 
-        // s3에서 로컬로 다운로드한 bg, languageVoice 파일 경로 삭제
-        File tempFileBg = new File(bgLocalPath);
+        // s3에서 로컬로 다운로드한 bgm, languageVoice 파일 경로 삭제
+        File tempFileBgm = new File(bgmLocalPath);
         File tempFileLanguage = new File(languageLocalPath);
-        FileUtils.deleteDirectory(tempFileBg.getParentFile());
+        FileUtils.deleteDirectory(tempFileBgm.getParentFile());
         FileUtils.deleteDirectory(tempFileLanguage.getParentFile());
 
         System.out.println(newS3Path + "에 정상적으로 업로드 되었습니다. ");
@@ -152,110 +157,17 @@ public class VideoController {
         return ResponseEntity.ok(s3ObjectUrl);
     }
 
-    private String getMediaDownloadPathOnLocal (String title, String mediaType) {
-        // 해당 타이틀의 정보를 database에서 가져오기
-        Optional<Videos> videoInfo = service.getVideo(title);
-
-        // S3 버킷 정보 설정
-        String bucketName = environment.getProperty("app.ncp.bucketName");
-        String objectPath = String.format("media/%s/", title);
-        String objectName;
-
-        // 변수 초기화
-        String getMediaName = null;
-        String getMediaFormat;
-
-        switch (mediaType) {
-            case "video":
-                getMediaName = videoInfo.get().getVideo();
-                break;
-            case "bg":
-                getMediaName = videoInfo.get().getBg();
-                break;
-            case "ko":
-                getMediaName = videoInfo.get().getVoiceKr();
-                break;
-            case "en":
-                getMediaName = videoInfo.get().getVoiceEn();
-                break;
-            case "thai":
-                getMediaName = videoInfo.get().getVoiceThai();
-                break;
-        }
-
-        try {
-            // db table의 entity 내 column 값이 비어있는지 확인
-            if (getMediaName == null || getMediaName.isEmpty()) {
-                throw new NullPointerException("getMediaName is null or empty.");
-            }
-
-            // 확장자 식별
-            int lastDotIndex = getMediaName.lastIndexOf('.');
-            if (lastDotIndex >= 0) {
-                getMediaFormat = getMediaName.substring(lastDotIndex);
-                System.out.println("getMediaName: " + getMediaName);
-                System.out.println("getMediaFormat: " + getMediaFormat);
-            } else {
-                throw new NotFoundException("media format error: 확장자를 식별할 수 없습니다.");
-            }
-
-            // S3 버킷에 media 타입 전달
-            objectName = String.format("%s%s", objectPath, getMediaName);
-            System.out.println("objectName: " + objectName);
-
-            S3Object s3Object = s3.getObject(bucketName, objectName);
-            InputStream inputStream = s3Object.getObjectContent();
-            System.out.println("inputStream: " + inputStream);
-
-            // 임시 파일 생성
-            File inputFile = File.createTempFile(title, getMediaFormat);
-            inputFile.deleteOnExit();
-
-            // 파일을 저장할 경로 생성
-            String outputDir = "./src/main/resources/temp/" + "audio_" + UUID.randomUUID().toString();
-            String outputFilePath = String.format("%s/%s", outputDir, inputFile.getName());
-            File outputFile = new File(outputFilePath);
-
-            // 파일 경로가 없을 경우 해당 파일 경로 생성
-            File mediaDir = new File(outputDir);
-            if (!mediaDir.exists()) {
-                mediaDir.mkdirs();
-            }
-
-            // 임시 파일을 지정된 경로에 복사
-            FileUtils.copyInputStreamToFile(inputStream, outputFile);
-
-            System.out.println("outputFilePath: " + outputFilePath);
-            return outputFilePath;
-
-        } catch (Exception e) {
-            System.out.println(e);
-        }
-        return null;
-    }
-
     @GetMapping("/createStream/{title}/video")
     public ResponseEntity<String> getHLSUrl(@PathVariable @NotBlank String title) throws Exception {
         // 해당 타이틀의 정보를 database에서 가져오기
-        Optional<Videos> videoInfo = service.getVideo(title);
+        Optional<Videos> videoInfo = videoService.getVideo(title);
         String db_video = videoInfo.get().getVideo();
 
-        // S3 버킷에서 파일 다운로드
-        String bucketName = environment.getProperty("app.ncp.bucketName");
-        String objectPath = String.format("media/%s/", title);
-        String objectName = String.format("%s%s", objectPath, db_video);
-        System.out.println("objectName: " + objectName);
+        mediaUtils.init(videoService, environment);
+        String inputFilePath = mediaUtils.getMediaDownloadPathOnLocal(title, "video");
 
-        S3Object s3Object = s3.getObject(bucketName, objectName);
-        InputStream inputStream = s3Object.getObjectContent();
-        System.out.println("inputStream: " + inputStream);
+        File inputFile = new File(inputFilePath);
 
-        // 임시 파일 생성
-        File inputFile = File.createTempFile(title, ".mp4");
-        inputFile.deleteOnExit();
-
-        // InputStream을 임시 파일에 복사
-        FileUtils.copyInputStreamToFile(inputStream, inputFile);
 
         // .m3u8 파일 생성
         String localSrc = environment.getProperty("app.local.src");
@@ -266,10 +178,7 @@ public class VideoController {
         String outputFileName = String.format("%s.m3u8", title);
         String outputFilePath = String.format("%s/%s", outputDir, outputFileName);
 
-        File mediaDir = new File(outputDir);
-        if (!mediaDir.exists()) {
-            mediaDir.mkdirs();
-        }
+        File mediaDir = checkFilePath(outputDir);
 
         FFmpegBuilder builder = new FFmpegBuilder()
                 .setInput(inputFile.getAbsolutePath())
@@ -289,6 +198,9 @@ public class VideoController {
         String localFilePath = String.format("%s/%s", outputDir, outputFileName);
 
         // .ts 파일들을 S3에 업로드
+        String bucketName = environment.getProperty("app.ncp.bucketName");
+        String objectPath = String.format("media/%s/", title);
+
         String[] tsFiles = new File(outputDir).list((dir, name) -> name.endsWith(".ts"));
         String newS3Path = objectPath + "streamingFile/video/";
         for (String tsFile : tsFiles) {
@@ -380,31 +292,31 @@ public class VideoController {
 
     @GetMapping("")
     public Iterable<Videos> getVideoList() {
-        return service.selectAll();
+        return videoService.selectAll();
     }
 
     @GetMapping("/{title}")
     public Optional<Videos> getVideo(@PathVariable @NotBlank String title) {
-        return service.getVideo(title);
+        return videoService.getVideo(title);
     }
 
     @GetMapping("/{title}/ko")
     public String getVoiceKo(@PathVariable @NotBlank String title) {
-        return service.getVoiceKo(title);
+        return videoService.getVoiceKo(title);
     }
 
     @GetMapping("/{title}/en")
     public String getVoiceEn(@PathVariable @NotBlank String title) {
-        return service.getVoiceEn(title);
+        return videoService.getVoiceEn(title);
     }
 
     @GetMapping("/{title}/thai")
     public String getVoiceThai(@PathVariable @NotBlank String title) {
-        return service.getVoiceThai(title);
+        return videoService.getVoiceThai(title);
     }
 
-    @GetMapping("/{title}/bg")
-    public String getBg(@PathVariable @NotBlank String title) {
-        return service.getBg(title);
+    @GetMapping("/{title}/bgm")
+    public String getBgm(@PathVariable @NotBlank String title) {
+        return videoService.getBgm(title);
     }
 }

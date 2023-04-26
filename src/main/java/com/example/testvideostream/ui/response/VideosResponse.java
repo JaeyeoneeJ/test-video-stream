@@ -13,8 +13,8 @@ public class VideosResponse {
     Integer id;
     String title;
     String video;
-    String voiceKr;
+    String voiceKo;
     String voiceEn;
     String voiceThai;
-    String bg;
+    String bgm;
 }

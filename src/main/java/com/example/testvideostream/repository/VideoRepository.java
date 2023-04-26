@@ -9,16 +9,16 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
 @Repository
-public interface VideosRepository extends CrudRepository<Videos, Integer> {
+public interface VideoRepository extends CrudRepository<Videos, Integer> {
     @Query("SELECT * FROM videos WHERE title LIKE '%:title%'")
     Optional<Videos> findByTitle(@Param("title") String title);
 
-    @Query("SELECT voiceKr FROM videos WHERE title LIKE '%:title%'")
-    Videos findVoiceKrByTitle(@Param("title") String title);
+    @Query("SELECT voiceKo FROM videos WHERE title LIKE '%:title%'")
+    Videos findVoiceKoByTitle(@Param("title") String title);
     @Query("SELECT voiceEn FROM videos WHERE title LIKE '%:title%'")
     Videos findVoiceEnByTitle(@Param("title") String title);
     @Query("SELECT voiceThai FROM videos WHERE title LIKE '%:title%'")
     Videos findVoiceThaiByTitle(@Param("title") String title);
-    @Query("SELECT bg FROM videos WHERE title LIKE %:title%")
-    Videos findBgByTitle(@Param("title") String title);
+    @Query("SELECT bgm FROM videos WHERE title LIKE %:title%")
+    Videos findBgmByTitle(@Param("title") String title);
 }

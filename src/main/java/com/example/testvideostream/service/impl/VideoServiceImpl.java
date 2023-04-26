@@ -2,11 +2,9 @@ package com.example.testvideostream.service.impl;
 
 import com.example.testvideostream.exception.NotFoundException;
 import com.example.testvideostream.model.Videos;
-import com.example.testvideostream.repository.VideosRepository;
-import com.example.testvideostream.service.VideosService;
-import com.example.testvideostream.ui.request.VideosRequest;
+import com.example.testvideostream.repository.VideoRepository;
+import com.example.testvideostream.service.VideoService;
 import lombok.AllArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,8 +13,8 @@ import java.util.Optional;
 
 @Service
 @AllArgsConstructor
-public class VideosServiceImpl implements VideosService {
-    private VideosRepository repository;
+public class VideoServiceImpl implements VideoService {
+    private VideoRepository repository;
 
     private Environment environment;
 
@@ -38,13 +36,13 @@ public class VideosServiceImpl implements VideosService {
         if (repository.findByTitle(title) == null) {
             throw new NotFoundException("Title " + title + " not found in database");
         } else {
-            Videos videos = repository.findVoiceKrByTitle(title);
+            Videos videos = repository.findVoiceKoByTitle(title);
             String BASE_URL = environment.getProperty("app.base.url");
             String url = BASE_URL +
                     "/" +
                     videos.getTitle() +
                     "/" +
-                    videos.getVoiceKr();
+                    videos.getVoiceKo();
             return url;
         }
     }
@@ -85,17 +83,17 @@ public class VideosServiceImpl implements VideosService {
 
     @Override
     @Transactional(readOnly = true)
-    public String getBg(String title) {
+    public String getBgm(String title) {
         if (repository.findByTitle(title) == null) {
             throw new NotFoundException("Title " + title + " not found in database");
         } else {
-            Videos videos = repository.findBgByTitle(title);
+            Videos videos = repository.findBgmByTitle(title);
             String BASE_URL = environment.getProperty("app.base.url");
             String url = BASE_URL +
                     "/" +
                     videos.getTitle() +
                     "/" +
-                    videos.getBg();
+                    videos.getBgm();
             return url;
         }
     }

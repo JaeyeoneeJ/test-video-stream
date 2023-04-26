@@ -16,8 +16,8 @@ public class Videos {
     private Integer id;
     private String title;
     private String Video;
-    private String voiceKr;
+    private String voiceKo;
     private String voiceEn;
     private String voiceThai;
-    private String bg;
+    private String bgm;
 }
