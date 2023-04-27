@@ -15,10 +15,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.UUID;
 
 import static com.example.testvideostream.utils.FileUtils.checkFilePath;
 
@@ -29,12 +26,10 @@ public class AudioServiceImpl implements AudioService {
     private VideoService videoService;
     @Autowired
     private Environment environment;
-
-    MediaUtils mediaUtils = new MediaUtils();
+    private MediaUtils mediaUtils;
 
     @Override
     public void separateAudio(String title, String mediaType) throws IOException {
-
         try {
             // 해당 파일을 s3 버킷을 참조해서 다운로드
             mediaUtils.init(videoService, environment);
@@ -43,7 +38,6 @@ public class AudioServiceImpl implements AudioService {
 
             // 1. MultipartFile -> File 변환
             File audioFile = new File(audioLocalPath);
-//            File audioFile = new File("src/main/resources/temp/test.mp3");
 
             // 2. net.bramp 라이브러리를 사용하여 ffmpeg 명령어 생성
             String localSrc = environment.getProperty("app.local.src");
@@ -114,30 +108,15 @@ public class AudioServiceImpl implements AudioService {
             File extractedFileVoice = new File(outputFilePathVoice); // 분리된 오디오 파일 경로 설정
             File extractedFileBGM = new File(outputFilePathBGM); // 분리된 오디오 파일 경로 설정
             System.out.println("extractedFileVoice: " + extractedFileVoice);
+            System.out.println("extractedFileBGM: " + extractedFileBGM);
 
-            Files.copy(extractedFileVoice.toPath(), new File(filePath + "/extracted_voice.mp3").toPath()); // 분리된 오디오 파일을 저장
-            Files.copy(extractedFileBGM.toPath(), new File(filePath + "/extracted_bgm.mp3").toPath()); // 분리된 오디오 파일을 저장}
+//            Files.copy(extractedFileVoice.toPath(), new File(filePath + "/extracted_voice.mp3").toPath()); // 분리된 오디오 파일을 저장
+//            Files.copy(extractedFileBGM.toPath(), new File(filePath + "/extracted_bgm.mp3").toPath()); // 분리된 오디오 파일을 저장}
+
             System.out.println("파일이 정상적으로 분리되었습니다.");
         } catch (IOException e) {
             System.out.println(e);
+            throw new IOException(e);
         }
-    }
-
-    private File convertToFile(String audioLocalPath) throws IOException {
-        File file = new File(audioLocalPath);
-        InputStream inputStream = new FileInputStream(file);
-        OutputStream outputStream = new FileOutputStream(file.getName());
-
-        byte[] buffer = new byte[1024];
-        int length;
-
-        while ((length = inputStream.read(buffer)) != -1) {
-            outputStream.write(buffer, 0, length);
-        }
-
-        inputStream.close();
-        outputStream.close();
-
-        return file;
     }
 }

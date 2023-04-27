@@ -14,6 +14,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Optional;
 import java.util.UUID;
@@ -122,5 +123,49 @@ public class MediaUtils {
             System.out.println(e);
             return null;
         }
+    }
+
+    public static String uploadMediaFileOnS3 (String title, String mediaType, String outputDir, String outputFileName, String outputFilePath) {
+        try {
+            String endPoint = environment.getProperty("app.endPoint.url");
+            String regionName = environment.getProperty("app.regionName");
+            String accessKey = environment.getProperty("app.ncp.accessKey");
+            String secretKey = environment.getProperty("app.ncp.secretKey");
+
+            AmazonS3 s3 = AmazonS3ClientBuilder.standard()
+                    .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endPoint, regionName))
+                    .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey)))
+                    .build();
+
+            // s3 버킷 설정
+            String bucketName = environment.getProperty("app.ncp.bucketName");
+            String objectPath = String.format("media/%s/", title);
+
+            // .ts 파일들을 S3에 업로드
+            String[] tsFiles = new File(outputDir).list((dir, name) -> name.endsWith(".ts"));
+            String newS3Path = String.format("%sstreamingFile/%s/", objectPath, mediaType);
+            for (String tsFile : tsFiles) {
+                File file = new File(String.format("%s/%s", outputDir, tsFile));
+                String s3KeyName = String.format("%s%s", newS3Path, tsFile);
+                s3.putObject(bucketName, s3KeyName, file);
+            }
+
+            // .m3u8 파일 S3 업로드
+            String s3KeyName = String.format("%s%s", newS3Path, outputFileName);
+            File m3u8File = new File(outputFilePath);
+            s3.putObject(bucketName, s3KeyName, m3u8File);
+
+            String result = newS3Path + "에 정상적으로 업로드 되었습니다. ";
+            System.out.println(result);
+
+            // .m3u8 URL 반환
+            String s3ObjectUrl = s3.getUrl(bucketName, s3KeyName).toString();
+
+            return s3ObjectUrl;
+        } catch (Exception e) {
+            System.out.println("uploadMediaFileOnS3, Exception error :" + e);
+            return e.toString();
+        }
+
     }
 }

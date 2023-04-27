@@ -43,33 +43,13 @@ public class VideoController {
     @Autowired
     private Environment environment;
 
-
-    private AmazonS3 s3;
-
-
     MediaUtils mediaUtils = new MediaUtils();
-
-    @PostConstruct
-    public void init() {
-        String endPoint = environment.getProperty("app.endPoint.url");
-        String regionName = environment.getProperty("app.regionName");
-        String accessKey = environment.getProperty("app.ncp.accessKey");
-        String secretKey = environment.getProperty("app.ncp.secretKey");
-
-        this.s3 = AmazonS3ClientBuilder.standard()
-                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endPoint, regionName))
-                .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey)))
-                .build();
-    }
 
     @GetMapping("/createStream/{title}/language/{language}")
     public ResponseEntity<String> speechSynthesisOnLanguage (
             @PathVariable @NotBlank String title,
             @PathVariable @NotBlank String language
     ) throws Exception {
-        // 해당 타이틀의 정보를 database에서 가져오기
-        Optional<Videos> videoInfo = videoService.getVideo(title);
-
         // background music 다운로드 및 경로 저장
         mediaUtils.init(videoService, environment);
         String bgmLocalPath = mediaUtils.getMediaDownloadPathOnLocal(title, "bgm");
@@ -91,7 +71,7 @@ public class VideoController {
         long maxDuration = Math.round(Math.max(durationBgm, durationLanguage));
 
         // 새 audio 파일이 저장될 위치
-        String outputDir = "./src/main/resources/temp/" + "audio_" + UUID.randomUUID().toString();
+        String outputDir = "./src/main/resources/temp/" + "media_" + UUID.randomUUID().toString();
         String outputFileName = String.format("%s_%s.m3u8", title, language);
         String outputFilePath = String.format("%s/%s", outputDir, outputFileName);
 
@@ -119,55 +99,33 @@ public class VideoController {
         FFmpegExecutor executor = new FFmpegExecutor(ffmpeg, ffprobe);
         executor.createJob(builder).run();
 
-        // s3 버킷 설정
-        String bucketName = environment.getProperty("app.ncp.bucketName");
-        String objectPath = String.format("media/%s/", title);
+        String s3ObjectUrl = mediaUtils.uploadMediaFileOnS3(title, language, outputDir, outputFileName, outputFilePath);
 
-        // .m3u8 파일 로컬에 저장
-        String localFilePath = String.format("%s/%s", outputDir, outputFileName);
+        try {
+            // mediaDir 경로의 모든 파일 삭제
+            FileUtils.deleteDirectory(mediaDir);
 
-        // .ts 파일들을 S3에 업로드
-        String[] tsFiles = new File(outputDir).list((dir, name) -> name.endsWith(".ts"));
-        String newS3Path = String.format("%sstreamingFile/%s/", objectPath, language);
-        for (String tsFile : tsFiles) {
-            File file = new File(String.format("%s/%s", outputDir, tsFile));
-            String s3KeyName = String.format("%s%s", newS3Path, tsFile);
-            s3.putObject(bucketName, s3KeyName, file);
+            // s3에서 로컬로 다운로드한 bgm, languageVoice 파일 경로 삭제
+            File tempFileBgm = new File(bgmLocalPath);
+            File tempFileLanguage = new File(languageLocalPath);
+            FileUtils.deleteDirectory(tempFileBgm.getParentFile());
+            FileUtils.deleteDirectory(tempFileLanguage.getParentFile());
+
+            System.out.println("임시 파일이 정상적으로 삭제되었습니다.");
+        } catch (Exception e) {
+            System.out.println(e);
         }
-
-        // .m3u8 파일 S3 업로드
-        String s3KeyName = String.format("%s%s", newS3Path, outputFileName);
-        File m3u8File = new File(localFilePath);
-        s3.putObject(bucketName, s3KeyName, m3u8File);
-
-        // mediaDir 경로의 모든 파일 삭제
-        FileUtils.deleteDirectory(mediaDir);
-
-        // s3에서 로컬로 다운로드한 bgm, languageVoice 파일 경로 삭제
-        File tempFileBgm = new File(bgmLocalPath);
-        File tempFileLanguage = new File(languageLocalPath);
-        FileUtils.deleteDirectory(tempFileBgm.getParentFile());
-        FileUtils.deleteDirectory(tempFileLanguage.getParentFile());
-
-        System.out.println(newS3Path + "에 정상적으로 업로드 되었습니다. ");
-
-        // .m3u8 URL 반환
-        String s3ObjectUrl = s3.getUrl(bucketName, s3KeyName).toString();
 
         return ResponseEntity.ok(s3ObjectUrl);
     }
 
     @GetMapping("/createStream/{title}/video")
     public ResponseEntity<String> getHLSUrl(@PathVariable @NotBlank String title) throws Exception {
-        // 해당 타이틀의 정보를 database에서 가져오기
-        Optional<Videos> videoInfo = videoService.getVideo(title);
-        String db_video = videoInfo.get().getVideo();
-
+        // video 다운로드 및 경로 저장
         mediaUtils.init(videoService, environment);
         String inputFilePath = mediaUtils.getMediaDownloadPathOnLocal(title, "video");
 
-        File inputFile = new File(inputFilePath);
-
+//        File inputFile = new File(inputFilePath);
 
         // .m3u8 파일 생성
         String localSrc = environment.getProperty("app.local.src");
@@ -181,7 +139,7 @@ public class VideoController {
         File mediaDir = checkFilePath(outputDir);
 
         FFmpegBuilder builder = new FFmpegBuilder()
-                .setInput(inputFile.getAbsolutePath())
+                .setInput(inputFilePath)
                 .addOutput(outputFilePath)
                 .setFormat("hls")
                 .addExtraArgs("-threads", "1")  // 코어 수를 1개로 제한
@@ -191,104 +149,25 @@ public class VideoController {
                 .done();
 
         FFmpegExecutor executor = new FFmpegExecutor(ffmpeg, ffprobe);
-
         executor.createJob(builder).run();
 
-        // .m3u8 파일 로컬에 저장
-        String localFilePath = String.format("%s/%s", outputDir, outputFileName);
+        String s3ObjectUrl = mediaUtils.uploadMediaFileOnS3(title, "video", outputDir, outputFileName, outputFilePath);
 
-        // .ts 파일들을 S3에 업로드
-        String bucketName = environment.getProperty("app.ncp.bucketName");
-        String objectPath = String.format("media/%s/", title);
+        try {
+            // mediaDir 경로의 모든 파일 삭제
+            FileUtils.deleteDirectory(mediaDir);
 
-        String[] tsFiles = new File(outputDir).list((dir, name) -> name.endsWith(".ts"));
-        String newS3Path = objectPath + "streamingFile/video/";
-        for (String tsFile : tsFiles) {
-            File file = new File(String.format("%s/%s", outputDir, tsFile));
-            String s3KeyName = String.format("%s%s", newS3Path, tsFile);
-            s3.putObject(bucketName, s3KeyName, file);
+            // s3에서 로컬로 다운로드한 파일 경로 삭제
+            File tempFileBgm = new File(inputFilePath);
+            FileUtils.deleteDirectory(tempFileBgm.getParentFile());
+
+            System.out.println("임시 파일이 정상적으로 삭제되었습니다.");
+        } catch (Exception e) {
+            System.out.println(e);
         }
-
-        // .m3u8 파일 S3 업로드
-        String s3KeyName = String.format("%s%s", newS3Path, outputFileName);
-        File m3u8File = new File(localFilePath);
-        s3.putObject(bucketName, s3KeyName, m3u8File);
-
-        // mediaDir 경로의 모든 파일 삭제
-        FileUtils.deleteDirectory(mediaDir);
-
-        // .m3u8 URL 반환
-        String s3ObjectUrl = s3.getUrl(bucketName, s3KeyName).toString();
-
-        System.out.println(newS3Path + "에 정상적으로 업로드 되었습니다. ");
 
         return ResponseEntity.ok(s3ObjectUrl);
     }
-
-
-    @GetMapping("/download/{title}")
-    public ResponseEntity<InputStreamResource> downloadVideo(
-            @PathVariable @NotBlank String title
-    ) {
-        String bucketName = environment.getProperty("app.ncp.bucketName");
-        String objectPath = String.format("media/%s/", title);
-        String objectName = String.format("%s%s.mp4", objectPath, title);
-        String downloadFilePath = "src/main/resources/temp"; // 다운로드 경로
-
-        // create a temporary file to store downloaded object
-        File tempFile;
-        try {
-            tempFile = File.createTempFile("video",".mp4");
-        } catch (IOException e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
-
-        try {
-            S3Object s3Object = s3.getObject(bucketName, objectName);
-            S3ObjectInputStream s3ObjectInputStream = s3Object.getObjectContent();
-
-            OutputStream outputStream = new BufferedOutputStream(new FileOutputStream(tempFile));
-            byte[] bytesArray = new byte[4096];
-            int bytesRead = -1;
-            while ((bytesRead = s3ObjectInputStream.read(bytesArray)) != -1) {
-                outputStream.write(bytesArray, 0, bytesRead);
-            }
-
-            outputStream.close();
-            s3ObjectInputStream.close();
-            System.out.format("Object %s has been downloaded. \n", objectName);
-
-            // Move the downloaded file to desired download path
-            File downloadFile = new File(downloadFilePath + "/" + title + ".mp4");
-            tempFile.renameTo(downloadFile);
-            String currentDirectory = System.getProperty("user.dir");
-            System.out.println("현재 작업 경로: " + currentDirectory);
-            System.out.println("downleadFile: " + downloadFile);
-
-            // create an input stream resource from temporary file
-            InputStreamResource resource = new InputStreamResource(new FileInputStream(downloadFile));
-            HttpHeaders headers = new HttpHeaders();
-            headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + title + ".mp4");
-
-            return ResponseEntity.ok()
-                    .headers(headers)
-                    .contentLength(tempFile.length())
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .body(resource);
-
-        } catch (AmazonS3Exception | IOException e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        } finally {
-            // delete temporary file
-            if (tempFile != null && tempFile.exists()) {
-                tempFile.delete();
-                System.out.println("임시 파일을 삭제했다.");
-            }
-        }
-    }
-
 
     @GetMapping("")
     public Iterable<Videos> getVideoList() {
